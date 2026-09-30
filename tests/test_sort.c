@@ -1,68 +1,43 @@
-/* 유닛 테스트 — 외부 프레임워크 없이 표준 C만 쓴다.
- * 실행: make test-c
- */
 #include <stdio.h>
-#include <string.h>
-#include "sort.h"
+#include <stdlib.h>
+#include "../src/sort.h"
 
-static int checks = 0;
-static int failures = 0;
-
-static void printArray(const char *label, const int a[], int n) {
-    printf("      %s:", label);
-    for (int i = 0; i < n; i++) {
-        printf(" %d", a[i]);
-    }
-    printf("\n");
+Stats g;
+static int fails = 0, checks = 0;
+static int cmpKey(const void *x, const void *y) {
+    int a = ((const Rec *)x)->key, b = ((const Rec *)y)->key;
+    return (a > b) - (a < b);
 }
-
-/* input을 정렬한 결과가 want와 같은지 본다. */
-static void expectSorted(const char *name, int input[], const int want[], int n) {
+static void expect(int ok, const char *what, int n) {
     checks++;
-    bubbleSort(input, n);
-    if (n > 0 && memcmp(input, want, (size_t)n * sizeof(int)) != 0) {
-        failures++;
-        printf("FAIL  %s\n", name);
-        printArray("got ", input, n);
-        printArray("want", want, n);
-        return;
-    }
-    printf("ok    %s\n", name);
+    if (!ok) { fails++; printf("FAIL %s n=%d\n", what, n); }
 }
 
 int main(void) {
-    {
-        int a[] = {6, 8, 5, 9, 10, 1, 7, 2, 4, 3};
-        const int want[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
-        expectSorted("섞인 배열", a, want, 10);
-    }
-    {
-        int a[] = {1, 2, 3, 4, 5};
-        const int want[] = {1, 2, 3, 4, 5};
-        expectSorted("이미 정렬된 배열", a, want, 5);
-    }
-    {
-        int a[] = {5, 4, 3, 2, 1};
-        const int want[] = {1, 2, 3, 4, 5};
-        expectSorted("역순 배열", a, want, 5);
-    }
-    {
-        int a[] = {3, 1, 3, 1, 2};
-        const int want[] = {1, 1, 2, 3, 3};
-        expectSorted("중복이 있는 배열", a, want, 5);
-    }
-    {
-        int a[] = {42};
-        const int want[] = {42};
-        expectSorted("원소 하나", a, want, 1);
-    }
-    {
-        /* n = 0이면 배열을 건드리지 않는다. 초기화해 두어야 경고가 없다. */
-        int a[1] = {0};
-        const int want[1] = {0};
-        expectSorted("빈 배열", a, want, 0);
-    }
-
-    printf("\n%d checks, %d failures\n", checks, failures);
-    return failures == 0 ? 0 : 1;
+    void (*fn[])(Rec *, int) = {quickSort, mergeSort, combSort};
+    const char *name[] = {"quickSort", "mergeSort", "combSort"};
+    for (int f = 0; f < 3; f++)
+        for (int n = 0; n <= 300; n++)
+            for (int mode = 0; mode < 4; mode++) {            /* 무작위 · 정렬됨 · 역순 · 모두 같은 값 */
+                Rec *a = malloc((n + 1) * sizeof *a), *b = malloc((n + 1) * sizeof *b);
+                for (int i = 0; i < n; i++) {
+                    a[i].key = mode == 0 ? rand() % 50 : mode == 1 ? i : mode == 2 ? n - i : 7;
+                    a[i].tag = i;
+                    b[i] = a[i];
+                }
+                fn[f](a, n);
+                qsort(b, n, sizeof *b, cmpKey);
+                int ok = 1;
+                for (int i = 0; i < n; i++) if (a[i].key != b[i].key) ok = 0;
+                expect(ok, name[f], n);
+                if (f == 1) {                                   /* mergeSort는 안정이어야 한다 */
+                    int st = 1;
+                    for (int i = 0; i + 1 < n; i++)
+                        if (a[i].key == a[i + 1].key && a[i].tag > a[i + 1].tag) st = 0;
+                    expect(st, "mergeSort stable", n);
+                }
+                free(a); free(b);
+            }
+    printf("%d checks, %d failures\n", checks, fails);
+    return fails != 0;
 }
